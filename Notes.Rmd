@@ -1,0 +1,105 @@
+---
+title: "FinalProjectTesting"
+author: "Zeyuan Wang"
+date: "11/11/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# Load packages
+library(genius)
+library(tidyverse)
+library(tidytext)
+data("stop_words")
+```
+
+```{r}
+records <- read.csv("RecordYear_subset.csv", sep = ",", header=T)
+```
+
+
+```{r}
+additionalStopWords <- read.table("AdditionalStopWords.txt")
+```
+
+```{r}
+# create data from of only 1980 records of artist, track (song)
+y80 <- records %>% 
+  filter (year == "1980") %>%
+  select(artist, track)
+
+# create data fraome of lyrics from songs 1980
+artistlyrics <- y80 %>%
+  add_genius(artist, track, type = "lyrics")
+
+verse_words <- artistlyrics %>% 
+  unnest_tokens(word, lyric)
+
+ft <- verse_words %>%
+  anti_join(stop_words)
+
+topten <- ft %>%
+  count(word, sort = TRUE) %>%
+  filter(n >= 3) %>%
+  filter(word != 'em') %>% #Review topten and filter words missed
+  top_n(10)
+```
+```{r}
+y80
+artistlyrics
+verse_words
+```
+
+
+```{r}
+topten %>%
+  ggplot(aes(n, word)) + 
+  geom_col() +
+#  coord_flip() +
+  labs(y = NULL)
+```
+
+
+
+
+```{r}
+# Load additional stop words
+AdditionalStopWords <- read.table("AdditionalStopWords.txt")
+# update stop words
+stop_words1 = stop_words
+stop_words1 <- rbind(stop_words1, data.frame(c("word", AdditionalStopWords$V1), c("lexicon", rep("NA", 11))))
+stop_words1
+```
+```{r}
+stop_words1
+```
+
+```{r}
+additionalStopWords <- data.frame(additionalStopWords$V1, rep("NA", 11))
+
+```
+```{r}
+as.numeric(unlist(strsplit("1998[00]", split = "[", fixed = TRUE))[1])
+
+
+```
+
+```{r}
+sentiment_words <- plain_words
+sentimentValue <- c()
+
+for (i in 1:dim(plain_words)[1]){
+  sentimentValue <- append(sentimentValue, as.numeric(subset(modifiedSentiments, modifiedSentiments$word == plain_words$word[i])$sentiment))
+}
+
+sentiment_words <- cbind(sentiment_words, sentimentValue)
+
+#subset(modifiedSentiments, modifiedSentiments$word == "ago")$sentiment
+
+```
+

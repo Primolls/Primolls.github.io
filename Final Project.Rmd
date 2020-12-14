@@ -1,0 +1,327 @@
+---
+title: "Final Project"
+author: "Zeyuan Wang"
+date: "12/12/2020"
+output: html_notebook
+---
+
+```{r setup, include=TRUE, results='hide'}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+```{r}
+# Load packages and stop words
+library(genius)
+library(tidyverse)
+library(tidytext)
+library(rvest)
+library(ggplot2)
+library(gridExtra)
+library(stringr)
+```
+
+
+```{r}
+# Load the original stop words
+data("stop_words")
+```
+
+```{r}
+# Load additional stop words
+additionalStopWords <- read.table("AdditionalStopWords.txt")
+
+# Let the additional stop words have the same structure with stop_words
+additionalStopWords <- cbind(additionalStopWords, rep("UNKNOWN", dim(additionalStopWords)[1]))
+colnames(additionalStopWords) <- c("word", "lexicon")
+```
+
+```{r}
+# update stop words by combine the additional and orginal stop words since they have the same structure now
+stop_words <- rbind(stop_words, additionalStopWords)
+```
+
+```{r}
+# Load list of songs from Wikipedia
+page <- "https://en.wikipedia.org/wiki/Grammy_Award_for_Record_of_the_Year"
+tableList <- page %>%
+  read_html() %>%
+  html_nodes(css = "table")
+```
+
+
+```{r}
+# Extract the 4 tables that contains songs from 1980 to 2019 and store them as songList
+songList <- rbind(html_table(tableList[[5]], fill = TRUE), 
+                  html_table(tableList[[6]], fill = TRUE), 
+                  html_table(tableList[[7]], fill = TRUE), 
+                  html_table(tableList[[8]], fill = TRUE))
+```
+
+
+```{r}
+# Remove all NAs in songList
+songList <- songList[complete.cases(songList),]
+# Rename variable names
+colnames(songList) <- c("Year", "Track", "Artist", "Production team")
+# eliminate variables that we do not really need
+songList <- 
+  songList %>%
+  select(Year, Track, Artist)
+
+# Remove numbers in the square brackets after "year" and transfer variable "year" from string to integer (from character to numeric)
+# By breaking a string into individual letters and select the first 4 digits
+# as.numeric transfers string to numeric values therefore we can treat year as numbers
+for (i in 1:dim(songList)[1]){
+  songList[i, 1] <- as.numeric(substr(songList[i,1], 1, 4))
+}
+```
+
+
+```{r}
+# create data frame of lyrics of songs from 1980 to 2019
+songLyrics <- songList %>%
+  add_genius(Artist, Track, type = "lyrics")
+
+# break lyrics from lines to words
+verse_words <- songLyrics %>% 
+  unnest_tokens(word, lyric)
+
+# filter out all 1160 stop words, either filter or anti_join would work
+plain_words <- verse_words %>%
+  anti_join(stop_words)
+```
+
+```{r}
+# create a empty array to store the decade information
+decade <- c()
+# since the decade is indicated by the number other than the unit digit of the year
+# we can divide the year by 10 and round the result down by using floor()
+# then multiply the result by 10 to get the correct decade
+# i.e. if we divide 1989 by 10 and round it down we get 198, then multiply by 10 we get 1980
+for (i in 1:dim(verse_words)[1]){
+  decade <- append(decade, 10*floor(as.numeric(verse_words$Year[i])/10))
+}
+# add decade to the dataframe that contains words before we eliminate stop words
+verse_words <- cbind(verse_words, decade)
+# use as.factor to make decade a factor variable
+verse_words$decade <- as.factor(verse_words$decade)
+
+# create a empty array to store the decade information
+decade <- c()
+# since the decade is indicated by the number other than the unit digit of the year
+# we can divide the year by 10 and round the result down by using floor()
+# then multiply the result by 10 to get the correct decade
+# i.e. if we divide 1989 by 10 and round it down we get 198, then multiply by 10 we get 1980
+for (i in 1:dim(plain_words)[1]){
+  decade <- append(decade, 10*floor(as.numeric(plain_words$Year[i])/10))
+}
+# add decade to the dataframe that contains words after we eliminate stop words
+plain_words <- cbind(plain_words, decade)
+# use as.factor to make decade a factor variable
+plain_words$decade <- as.factor(plain_words$decade)
+```
+
+
+# Graph 1
+```{r}
+verse_words %>% # identify the dataframe we are going to work with 
+  group_by(Track) %>% # group by Track(song name) for further counting purpose
+  summarise(yearlyTotalWords = n(), decade) %>% # summarise group information 
+                                                # and select group name, new variable for counting, and decade
+  slice(1) %>% # only keep the first row inside each group since members
+               # in each group(Track) have identical value for total words
+  ggplot() + # create ggplot to graph
+  aes(x = decade, y = yearlyTotalWords, fill = decade) + # indicate variables for x and y
+                                                         # and fill color by decade 
+  ggtitle("Boxplots of Words per Grammy Nominated Song by Decade") + # add and name title
+  xlab("Decade") + # rename x-axis label
+  ylab("Words per Song") + # rename y-axis label
+  theme(legend.position = "none") + # remove legend
+  geom_boxplot(outlier.colour = "red") # graph boxplot, change outlier color to red
+```
+The amount of words per song per grammy in 1980s and 1990s doesn't have too much different on over all distribution, but in 1990s the amount of words are more densed and caused the fence for outliers (IQR) narrower. Total words per song per grammy in 2000s and 2010s seems more than the previous two decades, and 2000s has a larger IQR.
+
+# Graph 2
+```{r}
+plain_words %>% # identify the dataframe we are going to work with 
+  count(word, sort = TRUE) %>% # count the amount of words and sort
+  top_n(10) %>% # keep only the top 10 values
+  arrange(desc(n)) %>% # sort by descending order on n
+  ggplot() + # create ggplot to graph
+  aes(x = reorder(word, desc(n)), y = n) + # indicate variables for x and y
+                                           # and reorder x with descending order by n
+  ggtitle ("Ten Most Popular Words of Grammy Nominated Songs From 1980-2019") + # add and name title
+  xlab("Word") + # rename x-axis label
+  ylab("Count") + # rename y-axis label
+  geom_col(fill = "skyblue") # graph bar plot and fill color with skyblue 
+```
+The top ten words in Grammy Nominated Songs from 1980 to 2019 are:
+love, baby, night, wanna, feel, time, heart, life, shake, world.
+It seems songs that unburden one's heart or love songs are easier to win grammy.
+
+# Graph 3
+```{r}
+# p(plot) for top 10 words in 1980s
+p1 <- plain_words %>% # identify the dataframe we are going to work with 
+  filter(decade == "1980") %>% # select data in the specified decade
+  count(word, sort = TRUE) %>% # count the amount of words and sort
+  top_n(10) %>% # keep only the top 10 values
+  arrange(desc(n)) %>% # sort by descending order on n
+  ggplot() + # create ggplot to graph
+  aes(x = reorder(word, desc(n)), y = n) + # indicate variables for x and y
+                                           # reorder x with descending order by n
+  ggtitle ("1980s") + # add and name title
+  xlab("Word") + # rename x-axis label
+  ylab("Count") + # rename y-axis label
+  geom_col(fill = "blue") # graph bar plot and fill color with blue 
+
+# p(plot) for top 10 words in 1990s
+p2 <- plain_words %>% # identify the dataframe we are going to work with 
+  filter(decade == "1990") %>% # select data in the specified decade
+  count(word, sort = TRUE) %>% # count the amount of words and sort
+  top_n(10) %>% # keep only the top 10 values
+  arrange(desc(n)) %>% # sort by descending order on n
+  ggplot() + # create ggplot to graph
+  aes(x = reorder(word, desc(n)), y = n) + # indicate variables for x and y
+                                           # reorder x with descending order by n
+  ggtitle ("1990s") + # add and name title
+  xlab("Word") + # rename x-axis label
+  ylab("Count") + # rename y-axis label
+  geom_col(fill = "red") # graph bar plot and fill color with blue 
+
+# p(plot) for top 10 words in 2000s
+p3 <- plain_words %>% # identify the dataframe we are going to work with 
+  filter(decade == "2000") %>% # select data in the specified decade
+  count(word, sort = TRUE) %>% # count the amount of words and sort
+  top_n(10) %>% # keep only the top 10 values
+  arrange(desc(n)) %>% # sort by descending order on n
+  ggplot() + # create ggplot to graph
+  aes(x = reorder(word, desc(n)), y = n) + # indicate variables for x and y
+                                           # reorder x with descending order by n
+  ggtitle ("2000s") + # add and name title
+  xlab("Word") + # rename x-axis label
+  ylab("Count") + # rename y-axis label
+  geom_col(fill = "pink") # graph bar plot and fill color with blue 
+
+# p(plot) for top 10 words in 2010s
+p4 <- plain_words %>% # identify the dataframe we are going to work with 
+  filter(decade == "2010") %>% # select data in the specified decade
+  count(word, sort = TRUE) %>% # count the amount of words and sort
+  top_n(10) %>% # keep only the top 10 values
+  arrange(desc(n)) %>% # sort by descending order on n
+  ggplot() + # create ggplot to graph
+  aes(x = reorder(word, desc(n)), y = n) + # indicate variables for x and y
+                                           # reorder x with descending order by n
+  ggtitle ("2010s") + # add and name title
+  xlab("Word") + # rename x-axis label
+  ylab("Count") + # rename y-axis label
+  geom_col(fill = "black") # graph bar plot and fill color with blue 
+
+# combine 4 graphs we created above in a 2 by 2 grid and add and name title
+grid.arrange(p1, p2, p3, p4, nrow = 2, top = "Top Ten Words by Decade")
+```
+The top ten words in Grammy Nominated Songs in 1980s are:
+love, night, beat, wanna, life, baby, bring, heart, roll, day
+
+The top ten words in Grammy Nominated Songs in 1980s are:
+love, fly, baby, mine, heart, bop, touch, world, life, night, time
+
+The top ten words in Grammy Nominated Songs in 1980s are:
+love, baby, hey, girl, wanna, by, shit, walk, running, time
+
+The top ten words in Grammy Nominated Songs in 1980s are:
+love, shake, about, baby, night, feel, mum, bass, bitch, ayy
+
+We can tell that love is always the most popular words, and baby is always popular. But the rest of top ten are always changing.
+in 1980s and 1990s the words lookes normal, but in 2000s words like "bye", "shit" appeared in the top ten, indicates people are not reverence for dirty words in lyric as before. In 2010s, 'bitch' and 'ayy' appeared in the top ten as well, that might because rap is getting more and more popular.
+
+
+# Graph 4
+```{r}
+# recode sentiment from positive/negative to 1/0
+# copy everything in sentiments and store in modifiedSentiments
+modifiedSentiments <- sentiments
+
+# use for loop to apply certain steps for all elements in modifiedSentiments
+for (i in 1:length(modifiedSentiments$sentiment)){ 
+  if (modifiedSentiments[i, 2] == "negative"){ # check if the original value is "negative"
+    modifiedSentiments[i, 2] = '0' # if TURE, change it to 0
+  }else{
+    modifiedSentiments[i, 2] = '1' # otherwise, change it to 1
+  }
+}
+# transfer the type of elements in the sentiment column in modifiedSentiments 
+# from string to integer (character to numeric)
+modifiedSentiments$sentiment = as.numeric(modifiedSentiments$sentiment)
+```
+
+```{r}
+# assign sentiment value for each word
+plain_words %>% # identify the dataframe we are going to work with 
+  left_join(modifiedSentiments, by = "word") %>% # join sentiment information for each words in plain_words
+  group_by(Year) %>% # group by year
+  mutate(decade = paste(decade, "s", sep = "")) %>% # rename variable 'decade' by adding a 's'
+  # summarise group information and select group name, new variable for sum, and decade
+  summarise(totalSentiment = sum(sentiment, na.rm = TRUE), decade) %>% 
+  slice(1) %>% # only keep the first row inside each group
+  ggplot() + # create ggplot to graph
+  aes(x = Year, y = totalSentiment, fill = decade) + # indicate variables for x and y, and fill color by decade
+  scale_x_discrete(breaks = c("1980", "1990", "2000", "2010", "2020")) + # show sepcified marks on the x-axis
+  ggtitle ("Net Sentiment Score by Year") + # add and name title
+  xlab("Year") + # rename x-axis label
+  ylab("Net Sentiment") + # rename y-axis label
+  geom_col() # plot bar graph
+```
+The sentiment is may have a decreasing trend with time, it is hard to tell from the bar plot. But we can tell that in the 1980s, multiple years have pretty high sentiment scores, and only year 1988 has sentiment score lower than 25. 
+In 1990s, three years have sentiment score lower than 25, and 2 of the rest are only one or two points higher than 25.The rest are not too high as well. 
+In 2000s, four of the ten years have sentiment score lower than 25, but the rest seems a little higher than 1990s and sill much lower than 1980s.
+In 2010s, year 2011 has a sentiment score that is almost zero, but but year 2016 has a extremely high sentiment score. The overall sentiment scores in 2010s is as good as the 1980s.
+The sentiment contained in the songs seems decreasing from 1980s to 2000s, but rised up in 2010s.
+
+# Graph 5
+```{r}
+plain_words %>% # identify the dataframe we are going to work with 
+  left_join(modifiedSentiments, by = "word") %>% # join sentiment information for each words in plain_words
+  group_by(Year) %>% # group by year
+  mutate(decade = paste(decade, "s", sep = "")) %>% # rename variable 'decade' by adding a 's'
+  group_by(decade) %>% # group by decade
+  # summarise group information and select group name and new variable for mean sentiment 
+  summarise(meanSentiment = mean(sentiment, na.rm = TRUE)) %>% 
+  ggplot()  + # create ggplot to graph
+  aes(x = decade, y = meanSentiment, fill = decade) + # indicate variables for x and y, and fill color by decade
+  ggtitle ("Mean Sentiment Score by Decade") + # add and name title
+  xlab("Year") + # rename x-axis label
+  ylab("Mean sentiment") + # rename y-axis label
+  theme(legend.position = "none") + # remove legend
+  geom_col() # plot bar graph
+```
+The mean sentiment score within each decade shows exactly what my previous conclusion is: 
+The sentiment contained in the songs seems decreasing from 1980s to 2000s, but rised up in 2010s.
+But surprisingly, 2010s is the sencond last among four decades. That might caused by the extremely low sentiment score in year 2011.
+The mean sentiment score dropped a lot from 1990s to 2000s, and only rised up a little in 2010s.
+
+
+# Graph 6
+```{r}
+# assign sentiment value for each word
+plain_words %>% # identify the dataframe we are going to work with 
+  left_join(modifiedSentiments, by = "word") %>% # join sentiment information for each words in plain_words
+  group_by(Year) %>% # group by year
+  mutate(decade = paste(decade, "s", sep = "")) %>% # rename variable 'decade' by adding a 's'
+  # summarise group information and select group name, new variable for sum, and decade
+  summarise(totalSentiment = sum(sentiment, na.rm = TRUE), decade) %>%  
+  slice(1) %>% # only keep the first row inside each group
+  ggplot() + # create ggplot to graph
+  aes(x = Year, y = totalSentiment, color = decade) + # indicate variables for x and y, and fill color by decade
+  scale_x_discrete(breaks = c("1980", "1990", "2000", "2010")) + # show sepcified marks on the x-axis
+  ggtitle (str_wrap("Net Sentiment Score by Year of Grammy Nominated Records from 1980 - 2019 with Linear Model Fit", 60)) + # add and name title
+  xlab("Year") + # rename x-axis label
+  ylab("Net Sentiment") + # rename y-axis label
+  geom_point() + # graph scatterplot
+  # graph the regression line with color blue group = 1 ignores some effect caused by grouping
+  geom_smooth(method = lm, se = FALSE, na.rm = TRUE, col = "blue", aes(group=1)) 
+```
+
+The scatter shows nothing different with the the previous bar graph for individual years. It shows the variability of sentiment score in 1990s is the smallest, followed by 2000s, 1980s and 2010s are both with high variability.
+The fitted linear regression line has a negative slope and indicates a decreasing trend. But since the slope is close to zero, the decreasing trend may not be significant. 
+The scatter plot also shows that the accuracy when using this fitted regression line on predicting is not too good.
