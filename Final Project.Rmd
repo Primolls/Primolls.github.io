@@ -9,6 +9,10 @@ output: html_notebook
 knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 ```
 
+Website: https://primolls.github.io/Final%20Project.nb.html
+
+Presentation: https://primolls.github.io/Final%20Project.nb.html
+
 ```{r}
 # Load packages and stop words
 library(genius)
